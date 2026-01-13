@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>FamilyFit</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+
+    <style>
+        :root { --primary: #007AFF; --bg: #F2F2F7; --err: #FF3B30; }
+        body { font-family: -apple-system, sans-serif; background: var(--bg); margin: 0; display: flex; justify-content: center; min-height: 100vh; }
+        
+        #app { width: 100%; max-width: 450px; background: white; min-height: 100vh; position: relative; box-shadow: 0 0 20px rgba(0,0,0,0.1); display: flex; flex-direction: column; }
+        
+        .page { display: none; padding: 20px; flex-grow: 1; animation: fadeIn 0.3s; flex-direction: column; }
+        .page.active { display: flex; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* UI 组件 */
+        h2 { margin-top: 0; color: #1c1c1e; }
+        h3 { margin: 0; font-size: 17px; font-weight: 600; color: #333; }
+        p.desc { color: #8e8e93; font-size: 13px; margin-top: 5px; }
+        
+        /* 输入框 & 下拉选单 */
+        input, select { width: 100%; padding: 14px; border: 1px solid #e5e5ea; border-radius: 10px; box-sizing: border-box; font-size: 16px; background: #fafafa; margin-bottom: 15px; }
+        input:focus, select:focus { border-color: var(--primary); outline: none; background: #fff; }
+        
+        /* 组合输入框样式 */
+        .input-group { display: flex; gap: 5px; margin-bottom: 15px; }
+        .input-group select { width: 35%; margin-bottom: 0; } 
+        .input-group input { margin-bottom: 0; }
+        
+        label { font-size: 12px; color: #666; margin-left: 4px; margin-bottom: 4px; display: block; }
+
+        button { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:active { transform: scale(0.98); opacity: 0.9; }
+        button.secondary { background: #e5e5ea; color: #333; }
+        button.small { width: auto; padding: 6px 12px; font-size: 13px; border-radius: 6px; }
+
+        .navbar { padding: 15px 20px; background: rgba(255,255,255,0.95); border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 10; backdrop-filter: blur(10px); }
+        .lang-switch { position: absolute; top: 20px; right: 20px; background: #f0f0f0; padding: 5px 10px; border-radius: 20px; font-size: 12px; cursor: pointer; font-weight: bold; color: #555; z-index: 20; }
+
+        .card-list { display: flex; flex-direction: column; gap: 10px; }
+        .profile-card { border: 1px solid #eee; padding: 15px; border-radius: 12px; display: flex; align-items: center; justify-content: space-between; background: #fff; }
+        .group-card { background: #E3F2FD; border: 1px solid #BBDEFB; padding: 15px; border-radius: 12px; display: flex; align-items: center; cursor: pointer; transition: 0.2s; }
+        .group-card:active { background: #BBDEFB; }
+        
+        .auth-tabs { display: flex; border-bottom: 1px solid #eee; margin-bottom: 20px; }
+        .auth-tab { flex: 1; text-align: center; padding: 15px; color: #999; cursor: pointer; font-weight: bold; }
+        .auth-tab.active { color: var(--primary); border-bottom: 2px solid var(--primary); }
+
+        .person-container { display: flex; flex-direction: column; gap: 20px; padding-bottom: 80px; }
+        .spec-table { width: 100%; border-collapse: collapse; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden; background: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
+        .spec-table th.name-header { background: #007AFF; color: white; text-align: left; padding: 12px 15px; font-size: 18px; display: flex; justify-content: space-between; align-items: center; }
+        .spec-table td { padding: 12px 15px; border-bottom: 1px solid #f0f0f0; font-size: 15px; }
+        .spec-table td.label { background: #f9f9f9; color: #666; width: 35%; font-weight: 500; border-right: 1px solid #f0f0f0; }
+        .spec-table td.value { color: #333; font-weight: bold; }
+        .action-row { background: #fff; text-align: right; }
+        
+        /* 更新时间标签 */
+        .date-badge { font-size: 11px; background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 4px; font-weight: normal; }
+
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; display: none; align-items: flex-end; }
+        .modal-overlay.open { display: flex; }
+        .modal-content { background: white; width: 100%; border-radius: 20px 20px 0 0; padding: 25px; box-sizing: border-box; animation: slideUp 0.3s; max-height: 90vh; overflow-y: auto; }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .fab { position: fixed; bottom: 30px; right: 20px; width: 56px; height: 56px; background: var(--primary); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 30px; box-shadow: 0 4px 12px rgba(0,122,255,0.4); cursor: pointer; z-index: 50; }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <div class="lang-switch" onclick="toggleLanguage()">🌐 中 / En</div>
+
+    <div id="page-auth" class="page active">
+        <div style="text-align: center; margin-top: 40px; margin-bottom: 20px;">
+            <div style="font-size: 60px;">🔐</div>
+            <h2 data-i18n="app_name">FamilyFit</h2>
+            <p class="desc" data-i18n="app_desc">记录尺码，传递心意</p>
+        </div>
+        <div class="auth-tabs">
+            <div class="auth-tab active" id="tab-login" onclick="toggleAuth('login')" data-i18n="login">登录</div>
+            <div class="auth-tab" id="tab-register" onclick="toggleAuth('register')" data-i18n="register">注册账号</div>
+        </div>
+        <input type="text" id="auth-user" placeholder="账号">
+        <input type="tel" id="auth-pass" maxlength="7" placeholder="密码 (7位数字)">
+        <button id="btn-auth-action" onclick="handleAuthAction()" data-i18n="btn_login">登录</button>
+        <p id="auth-msg" style="text-align: center; color: var(--err); font-size: 13px; margin-top: 15px;"></p>
+    </div>
+
+    <div id="page-dashboard" class="page">
+        <div class="navbar" style="margin: -20px -20px 0 -20px;">
+            <h3 data-i18n="dashboard_title">我的主页</h3>
+            <span onclick="logout()" style="color:#007AFF; font-size:14px; cursor:pointer;" data-i18n="logout">退出</span>
+        </div>
+        <div style="margin-top: 20px; display: flex; justify-content: space-between; align-items: center;">
+            <h3 data-i18n="my_groups">🏠 我的群组</h3>
+            <button class="small secondary" onclick="openJoinGroupModal()" data-i18n="btn_join_group">+ 加入</button>
+        </div>
+        <div id="my-groups-list" class="card-list" style="margin-top: 10px;"></div>
+        <div style="margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px; display: flex; justify-content: space-between; align-items: center;">
+            <h3 data-i18n="my_profiles">📂 我的档案库</h3>
+            <button class="small secondary" onclick="openCreateModal()" data-i18n="btn_new">+ 新建</button>
+        </div>
+        <div id="my-profiles-list" class="card-list" style="flex-grow: 1; margin-top: 10px; padding-bottom: 20px;"></div>
+    </div>
+
+    <div id="page-group-view" class="page" style="padding: 0;">
+        <div class="navbar">
+            <span onclick="switchPage('page-dashboard')" style="font-size:20px; cursor:pointer;">⬅️</span>
+            <h3 id="display-group-title">Group</h3>
+            <span style="width: 24px;"></span>
+        </div>
+        <div style="padding: 15px;">
+            <div id="group-specs-container" class="person-container"></div>
+        </div>
+        <div class="fab" onclick="openShareModal()">+</div>
+    </div>
+</div>
+
+<div id="modal-join-group" class="modal-overlay">
+    <div class="modal-content">
+        <h3 data-i18n="join_group_title">加入/创建新群</h3>
+        <p class="desc" data-i18n="join_group_desc">输入群名和4位数字PIN码</p>
+        <input type="text" id="join-group-name" placeholder="群名">
+        <input type="tel" id="join-group-pass" maxlength="4" placeholder="4位数字PIN码">
+        <button onclick="confirmJoinGroup()" data-i18n="btn_confirm">确认</button>
+        <button class="secondary" onclick="closeModal('modal-join-group')" style="margin-top:10px;" data-i18n="btn_cancel">取消</button>
+    </div>
+</div>
+
+<div id="modal-create" class="modal-overlay">
+    <div class="modal-content">
+        <h3 data-i18n="edit_profile_title">📝 编辑档案</h3>
+        <input type="hidden" id="edit-id">
+        
+        <label data-i18n="label_name">名字</label>
+        <input type="text" id="edit-name">
+        
+        <div style="display: flex; gap: 10px;">
+            <div style="flex:1"><label data-i18n="label_height">身高 (cm)</label><input type="number" id="edit-height"></div>
+            <div style="flex:1"><label data-i18n="label_weight">体重 (kg)</label><input type="number" id="edit-weight"></div>
+        </div>
+
+        <label data-i18n="label_pant">裤码 / 腰围</label>
+        <input type="text" id="edit-pant" placeholder="如: 30码 / 80cm">
+
+        <label data-i18n="label_shoe">鞋码</label>
+        <div class="input-group">
+            <select id="edit-shoe-std">
+                <option value="EU">EU (欧码)</option>
+                <option value="US">US (美码)</option>
+                <option value="UK">UK (英码)</option>
+                <option value="CM">CM (公分)</option>
+            </select>
+            <input type="text" id="edit-shoe-val" placeholder="数值">
+        </div>
+
+        <label data-i18n="label_ring">戒指尺寸</label>
+        <div class="input-group">
+            <input type="text" id="edit-ring-size" placeholder="号数 (如: 港码15)" style="width: 50%;">
+            <input type="text" id="edit-ring-finger" placeholder="佩戴手指 (如: 中指)" style="width: 50%;">
+        </div>
+
+        <label data-i18n="label_color">喜欢的颜色</label>
+        <input type="text" id="edit-color">
+        
+        <label data-i18n="label_note">备注</label>
+        <input type="text" id="edit-note">
+        
+        <button onclick="saveProfile()" data-i18n="btn_save">保存</button>
+        <button class="secondary" onclick="closeModal('modal-create')" style="margin-top:10px;" data-i18n="btn_cancel">取消</button>
+    </div>
+</div>
+
+<div id="modal-share" class="modal-overlay">
+    <div class="modal-content">
+        <h3 data-i18n="share_title">📤 分享到此群</h3>
+        <div id="share-list" class="card-list" style="margin: 20px 0;"></div>
+        <button class="secondary" onclick="closeModal('modal-share')" data-i18n="btn_close">关闭</button>
+    </div>
+</div>
+
+<script>
+    // ================= 语言包 =================
+    const i18n = {
+        zh: {
+            app_name: "FamilyFit", app_desc: "记录尺码，传递心意", login: "登录", register: "注册账号",
+            btn_login: "登录", btn_register: "立即注册", dashboard_title: "我的主页", logout: "退出",
+            my_groups: "🏠 我的群组", btn_join_group: "+ 加入", my_profiles: "📂 我的档案库", btn_new: "+ 新建",
+            join_group_title: "加入/创建新群", join_group_desc: "输入群名和4位数字PIN码", btn_confirm: "确认", btn_cancel: "取消",
+            edit_profile_title: "📝 编辑档案", label_name: "名字", label_height: "身高 (cm)", label_weight: "体重 (kg)",
+            label_pant: "裤码 / 腰围", label_shoe: "鞋码", label_ring: "戒指 (号数/手指)",
+            label_color: "喜欢的颜色", label_note: "备注：想说的话", btn_save: "保存",
+            share_title: "📤 分享到此群", btn_close: "关闭", ph_account: "账号", ph_pass_7: "密码 (7位数字)",
+            ph_group_name: "群名 (如: 陈家)", ph_group_pin: "PIN码 (4位数字)", err_pass_7: "密码必须是7位数字！",
+            err_pin_4: "群组PIN码必须是4位数字！", err_input_all: "请输入完整", err_login_fail: "账号不存在或密码错误",
+            err_user_exist: "账号已存在", label_me: "(我)", btn_edit: "编辑", btn_share: "分享", btn_joined: "已加入",
+            btn_remove: "移除", msg_empty_group: "👻 空空如也<br>点右下角 + 号分享档案", msg_empty_profile: "暂无档案",
+            msg_empty_group_list: "还没加入群组", confirm_remove: "确定移除？", 
+            ph_ring_size: "号数", ph_ring_finger: "手指", label_updated: "更新于"
+        },
+        en: {
+            app_name: "FamilyFit", app_desc: "Size Matters, Love Connects", login: "Login", register: "Sign Up",
+            btn_login: "Login", btn_register: "Sign Up", dashboard_title: "Dashboard", logout: "Logout",
+            my_groups: "🏠 My Groups", btn_join_group: "+ Join", my_profiles: "📂 My Profiles", btn_new: "+ New",
+            join_group_title: "Join / Create Group", join_group_desc: "Enter name and 4-digit PIN", btn_confirm: "Confirm", btn_cancel: "Cancel",
+            edit_profile_title: "📝 Edit Profile", label_name: "Name", label_height: "Height (cm)", label_weight: "Weight (kg)",
+            label_pant: "Pant / Waist", label_shoe: "Shoe Size", label_ring: "Ring (Size/Finger)",
+            label_color: "Fav Color", label_note: "Note", btn_save: "Save",
+            share_title: "📤 Share to Group", btn_close: "Close", ph_account: "Username", ph_pass_7: "Password (7 digits)",
+            ph_group_name: "Group Name", ph_group_pin: "PIN (4 digits)", err_pass_7: "Password must be exactly 7 digits!",
+            err_pin_4: "PIN must be exactly 4 digits!", err_input_all: "Please fill all fields", err_login_fail: "Invalid username or password",
+            err_user_exist: "Username already exists", label_me: "(Me)", btn_edit: "Edit", btn_share: "Share", btn_joined: "Joined",
+            btn_remove: "Remove", msg_empty_group: "👻 Empty here<br>Click + to share profiles", msg_empty_profile: "No profiles yet",
+            msg_empty_group_list: "No groups joined", confirm_remove: "Remove from group?",
+            ph_ring_size: "Size", ph_ring_finger: "Finger", label_updated: "Updated"
+        }
+    };
+
+    // ================= 配置区 =================
+    const firebaseConfig = {
+      apiKey: "AIzaSyBNfAW4zEaxD84N5frkeFzn270JJ01ci1M",
+      authDomain: "familyfit-d6ada.firebaseapp.com",
+      projectId: "familyfit-d6ada",
+      storageBucket: "familyfit-d6ada.firebasestorage.app",
+      messagingSenderId: "444674806540",
+      appId: "1:444674806540:web:ddd07eb4645ac9da572f29",
+      measurementId: "G-FRXCC9E88W"
+    };
+
+    try { firebase.initializeApp(firebaseConfig); } catch(e){}
+    const db = firebase.firestore();
+
+    // ================= 状态 =================
+    let currentUserId = localStorage.getItem('uid') || "";
+    let currentGroupId = "";
+    let authMode = "login"; 
+    let currentLang = "zh";
+
+    window.onload = function() {
+        updateLangUI();
+        if(currentUserId) loadDashboard();
+    };
+
+    function toggleLanguage() { currentLang = currentLang === "zh" ? "en" : "zh"; updateLangUI(); }
+    function updateLangUI() {
+        const t = i18n[currentLang];
+        document.querySelectorAll('[data-i18n]').forEach(el => el.innerText = t[el.getAttribute('data-i18n')]);
+        document.getElementById('auth-user').placeholder = t.ph_account;
+        document.getElementById('auth-pass').placeholder = t.ph_pass_7;
+        document.getElementById('join-group-name').placeholder = t.ph_group_name;
+        document.getElementById('join-group-pass').placeholder = t.ph_group_pin;
+        document.getElementById('edit-ring-size').placeholder = t.ph_ring_size;
+        document.getElementById('edit-ring-finger').placeholder = t.ph_ring_finger;
+        if(document.getElementById('page-auth').classList.contains('active')) toggleAuth(authMode);
+    }
+
+    // ================= 1. 验证 =================
+    function toggleAuth(mode) {
+        authMode = mode;
+        const t = i18n[currentLang];
+        document.getElementById('tab-login').className = mode==='login'?'auth-tab active':'auth-tab';
+        document.getElementById('tab-register').className = mode==='register'?'auth-tab active':'auth-tab';
+        document.getElementById('btn-auth-action').innerText = mode==='login'?t.btn_login:t.btn_register;
+        document.getElementById('auth-msg').innerText = "";
+    }
+
+    async function handleAuthAction() {
+        const u = document.getElementById('auth-user').value.trim();
+        const p = document.getElementById('auth-pass').value.trim();
+        const msg = document.getElementById('auth-msg');
+        const t = i18n[currentLang];
+        
+        if(!u || !p) return msg.innerText = t.err_input_all;
+        if(!/^\d{7}$/.test(p)) return msg.innerText = t.err_pass_7; 
+        msg.innerText = "...";
+
+        try {
+            const userRef = db.collection('users').doc(u);
+            const doc = await userRef.get();
+            if (authMode === 'login') {
+                if (!doc.exists || doc.data().password !== p) return msg.innerText = t.err_login_fail;
+                loginSuccess(u);
+            } else {
+                if (doc.exists) return msg.innerText = t.err_user_exist;
+                await userRef.set({ password: p, joinedGroups: [] });
+                loginSuccess(u);
+            }
+        } catch(e) { console.error(e); msg.innerText = "Error"; }
+    }
+    function loginSuccess(uid) { currentUserId = uid; localStorage.setItem('uid', uid); loadDashboard(); }
+
+    // ================= 2. 仪表盘 =================
+    function loadDashboard() {
+        switchPage('page-dashboard');
+        const t = i18n[currentLang];
+        db.collection('users').doc(currentUserId).onSnapshot(doc => {
+            const list = document.getElementById('my-groups-list');
+            list.innerHTML = "";
+            const groups = doc.data().joinedGroups || [];
+            if(groups.length === 0) list.innerHTML = `<div style='text-align:center;color:#999;padding:20px;background:#f9f9f9;border-radius:8px;'>${t.msg_empty_group_list}</div>`;
+            else groups.forEach(g => {
+                list.innerHTML += `<div class="group-card" onclick="quickEnterGroup('${g.id}','${g.name}')"><div style="font-size:24px;margin-right:15px;">🏠</div><div style="flex-grow:1;"><div style="font-weight:bold;">${g.name}</div><div style="font-size:12px;color:#666;">PIN: ****</div></div><div style="color:#007AFF;">></div></div>`;
+            });
+        });
+        db.collection('profiles').where('ownerId', '==', currentUserId).onSnapshot(snap => {
+            const list = document.getElementById('my-profiles-list');
+            list.innerHTML = "";
+            if(snap.empty) list.innerHTML = `<p style='text-align:center;color:#999'>${t.msg_empty_profile}</p>`;
+            snap.forEach(doc => {
+                const d = doc.data();
+                list.innerHTML += `<div class="profile-card"><div><b>${d.name}</b></div><button class="small secondary" onclick="openEditModal('${doc.id}')">${t.btn_edit}</button></div>`;
+            });
+        });
+    }
+
+    // ================= 3. 群组 =================
+    function openJoinGroupModal() {
+        document.getElementById('join-group-name').value = ""; document.getElementById('join-group-pass').value = "";
+        document.getElementById('modal-join-group').classList.add('open');
+    }
+    async function confirmJoinGroup() {
+        const gn = document.getElementById('join-group-name').value.trim();
+        const gp = document.getElementById('join-group-pass').value.trim();
+        const t = i18n[currentLang];
+        if(!gn || !gp) return alert(t.err_input_all);
+        if(!/^\d{4}$/.test(gp)) return alert(t.err_pin_4); 
+
+        const groupId = gn + "_" + gp;
+        await db.collection('users').doc(currentUserId).update({ joinedGroups: firebase.firestore.FieldValue.arrayUnion({ name: gn, pass: gp, id: groupId }) });
+        closeModal('modal-join-group'); quickEnterGroup(groupId, gn);
+    }
+    function quickEnterGroup(gid, gName) {
+        currentGroupId = gid; document.getElementById('display-group-title').innerText = gName;
+        switchPage('page-group-view'); renderGroupSpecs();
+    }
+    function renderGroupSpecs() {
+        const container = document.getElementById('group-specs-container');
+        const t = i18n[currentLang];
+        db.collection('profiles').where('sharedGroups', 'array-contains', currentGroupId).onSnapshot(snap => {
+            container.innerHTML = "";
+            if(snap.empty) { container.innerHTML = `<div style='text-align:center;padding:40px;color:#999'>${t.msg_empty_group}</div>`; return; }
+            snap.forEach(doc => {
+                const d = doc.data(); const isMine = d.ownerId === currentUserId;
+                const actionHtml = isMine ? `<tr><td colspan="2" class="action-row"><button class="small" style="color:#ff3b30;background:white;border:1px solid #ff3b30" onclick="removeFromGroup('${doc.id}')">${t.btn_remove}</button></td></tr>` : '';
+                
+                // 🔥 时间戳处理
+                let dateStr = "";
+                if(d.updatedAt) {
+                    const date = new Date(d.updatedAt);
+                    dateStr = `${date.getFullYear()}/${date.getMonth()+1}/${date.getDate()}`;
+                }
+
+                container.innerHTML += `
+                <table class="spec-table">
+                    <thead>
+                        <tr>
+                            <th colspan="2" class="name-header">
+                                <div>${d.name} ${isMine?`<small>${t.label_me}</small>`:''}</div>
+                                ${dateStr ? `<span class="date-badge">${dateStr}</span>` : ''}
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td class="label">📏 ${t.label_height}</td><td class="value">${d.height||'-'}</td></tr>
+                        <tr><td class="label">⚖️ ${t.label_weight}</td><td class="value">${d.weight||'-'}</td></tr>
+                        <tr><td class="label">👖 ${t.label_pant}</td><td class="value">${d.pantSize||'-'}</td></tr>
+                        <tr><td class="label">👟 ${t.label_shoe}</td><td class="value">${d.shoe||'-'}</td></tr>
+                        <tr><td class="label">💍 ${t.label_ring}</td><td class="value">${d.ringSize||'-'} (${d.ringFinger||'-'})</td></tr>
+                        <tr><td class="label">🎨 ${t.label_color}</td><td class="value">${d.color||'-'}</td></tr>
+                        <tr><td class="label">💬 ${t.label_note}</td><td class="value" style="font-weight:normal;color:#555">${d.note||'-'}</td></tr>
+                        ${actionHtml}
+                    </tbody>
+                </table>`;
+            });
+        });
+    }
+
+    // ================= 4. 档案 (含新字段) =================
+    function openCreateModal() {
+        document.getElementById('edit-id').value = "";
+        ['name','height','weight','pant','shoe-val','ring-size','ring-finger','color','note'].forEach(k => document.getElementById('edit-'+k).value = "");
+        document.getElementById('edit-shoe-std').value = "EU"; 
+        document.getElementById('modal-create').classList.add('open');
+    }
+    
+    function openEditModal(id) {
+        db.collection('profiles').doc(id).get().then(doc => {
+            const p = doc.data();
+            document.getElementById('edit-id').value = id;
+            document.getElementById('edit-name').value = p.name;
+            document.getElementById('edit-height').value = p.height;
+            document.getElementById('edit-weight').value = p.weight;
+            document.getElementById('edit-pant').value = p.pantSize || ""; // 裤码
+            document.getElementById('edit-ring-size').value = p.ringSize || ""; // 戒指号
+            document.getElementById('edit-ring-finger').value = p.ringFinger || ""; // 戒指手指
+            document.getElementById('edit-color').value = p.color;
+            document.getElementById('edit-note').value = p.note;
+            
+            if (p.shoe && p.shoe.includes(' ')) {
+                const parts = p.shoe.split(' ');
+                document.getElementById('edit-shoe-std').value = parts[0];
+                document.getElementById('edit-shoe-val').value = parts[1];
+            } else {
+                document.getElementById('edit-shoe-val').value = p.shoe || "";
+            }
+            document.getElementById('modal-create').classList.add('open');
+        });
+    }
+
+    async function saveProfile() {
+        const id = document.getElementById('edit-id').value;
+        const shoeStd = document.getElementById('edit-shoe-std').value;
+        const shoeVal = document.getElementById('edit-shoe-val').value;
+        
+        const data = {
+            ownerId: currentUserId,
+            name: document.getElementById('edit-name').value,
+            height: document.getElementById('edit-height').value,
+            weight: document.getElementById('edit-weight').value,
+            pantSize: document.getElementById('edit-pant').value, // 裤码
+            shoe: shoeVal ? (shoeStd + " " + shoeVal) : "",
+            ringSize: document.getElementById('edit-ring-size').value, // 戒指号
+            ringFinger: document.getElementById('edit-ring-finger').value, // 手指
+            color: document.getElementById('edit-color').value,
+            note: document.getElementById('edit-note').value,
+            updatedAt: Date.now() // 🔥 记录当前时间戳
+        };
+        if(!data.name) return alert(i18n[currentLang].err_input_all);
+
+        if(id) await db.collection('profiles').doc(id).update(data);
+        else { data.sharedGroups = []; await db.collection('profiles').add(data); }
+        closeModal('modal-create');
+    }
+
+    function openShareModal() {
+        const list = document.getElementById('share-list'); const t = i18n[currentLang]; list.innerHTML = "";
+        db.collection('profiles').where('ownerId', '==', currentUserId).get().then(snap => {
+            snap.forEach(doc => {
+                const p = doc.data(); const isInGroup = p.sharedGroups && p.sharedGroups.includes(currentGroupId);
+                list.innerHTML += `<div class="profile-card"><div>${p.name}</div><button class="${isInGroup?'secondary':''} small" onclick="${isInGroup?'':`shareToGroup('${doc.id}')`}">${isInGroup?t.btn_joined:t.btn_share}</button></div>`;
+            });
+        });
+        document.getElementById('modal-share').classList.add('open');
+    }
+    async function shareToGroup(pid) { await db.collection('profiles').doc(pid).update({ sharedGroups: firebase.firestore.FieldValue.arrayUnion(currentGroupId) }); closeModal('modal-share'); renderGroupSpecs(); }
+    async function removeFromGroup(pid) { if(!confirm(i18n[currentLang].confirm_remove)) return; await db.collection('profiles').doc(pid).update({ sharedGroups: firebase.firestore.FieldValue.arrayRemove(currentGroupId) }); }
+
+    function switchPage(pid) { document.querySelectorAll('.page').forEach(p => p.classList.remove('active')); document.getElementById(pid).classList.add('active'); updateLangUI(); }
+    function closeModal(mid) { document.getElementById(mid).classList.remove('open'); }
+    function logout() { localStorage.clear(); location.reload(); }
+</script>
+</body>
+</html>
